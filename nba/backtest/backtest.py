@@ -8,7 +8,7 @@ class Optimizer:
     '''
     #Add add'l constraints if needed.    
     def __init__(self, df, salary_cap=60000, max_players=9, pos_removed=None):
-        self.df = df.rename(columns={'FPPG_predicted': 'FPPG'})
+        self.df = df.dropna()
         self.optimizer = LpProblem('fantasy', LpMaximize)
 
         self.salary_cap = salary_cap
@@ -17,10 +17,6 @@ class Optimizer:
         
         self.optimize_df = None
     
-
-    # def new_optimizer(self, new_df):
-    #     self.optimizer = LpProblem('fantasy', LpMaximize)      
-
 
     def optimize(self):
         df = self.df.dropna().copy()
@@ -32,10 +28,10 @@ class Optimizer:
         total_pos = []
         position_constraints = []
 
-        for pos in df.Position.unique():
-            df_pos = df[df.Position == pos]
-            salary = list(df_pos[["Nickname", "Salary"]].set_index("Nickname").to_dict().values())[0]
-            point = list(df_pos[["Nickname", "FPPG"]].set_index("Nickname").to_dict().values())[0]
+        for pos in df.Pos.unique():
+            df_pos = df[df.Pos == pos]
+            salary = list(df_pos[["Player_Name", "Salary"]].set_index("Player_Name").to_dict().values())[0]
+            point = list(df_pos[["Player_Name", "FDP_predicted"]].set_index("Player_Name").to_dict().values())[0]
             salaries[pos] = salary
             points[pos] = point
 
@@ -78,7 +74,7 @@ class Optimizer:
             constraints = [const.replace(v.name, str(v.varValue)) for const in constraints]
             if v.varValue != 0:
                 summary_df.append(
-                    {'Nickname': ' '.join(v.name.split('_')[1:])}
+                    {'Player_Name': ' '.join(v.name.split('_')[1:])}
                 )
 
         return pd.DataFrame(summary_df)
@@ -100,8 +96,8 @@ class Backtest(Optimizer):
         self.optimizer = Optimizer
 
         self.df = Optimizer.df.copy()
-        self.start_date = Optimizer.df.Date.min()              
-        self.end_date = Optimizer.df.Date.max()
+        self.start_date = pd.to_datetime(Optimizer.df.Date.min())              
+        self.end_date = pd.to_datetime(Optimizer.df.Date.max())
         
         self.backtest_df = pd.DataFrame()
         self.results = None
@@ -113,25 +109,27 @@ class Backtest(Optimizer):
         while self.start_date <= self.end_date:
             date_string = self.start_date.strftime("%Y-%m-%d")            
             tmp = self.df[self.df.Date == date_string]
-            
             player_col = 'players_'+date_string
             self.optimizer = Optimizer(tmp)
-            self.backtest_df[player_col] = self.optimizer.optimize().Nickname
-            
+            names = self.optimizer.optimize().Player_Name
+            if len(names) < 7:
+                self.start_date += delta
+                continue
+            self.backtest_df.loc[:, player_col] = names
             self.backtest_df = self.backtest_df.merge(
-                tmp[['Nickname', 'FPPG', 'FPPG_actual']],
+                tmp[['Player_Name', 'FDP_predicted', 'FDP_actual']],
                 how='left',
                 left_on=player_col,
-                right_on='Nickname',
+                right_on='Player_Name',
                 copy=False
-            ).drop(columns='Nickname')
+            ).drop(columns='Player_Name')
             
-            FPPG_predict_col = 'FPPG_predicted_'+date_string
-            FPPG_actual_col = 'FPPG_actual_'+date_string
+            FPPG_predict_col = 'FDP_predicted_'+date_string
+            FPPG_actual_col = 'FDP_actual_'+date_string
             
             self.backtest_df.rename(columns={
-                'FPPG': FPPG_predict_col,
-                'FPPG_actual': FPPG_actual_col
+                'FDP_predicted': FPPG_predict_col,
+                'FDP_actual': FPPG_actual_col
             }, inplace=True)
             
             self.start_date += delta
