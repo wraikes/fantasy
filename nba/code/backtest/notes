@@ -1,0 +1,15 @@
+Objective:
+max{c(FP)+SF(FP)+SF(FP)+PG(FP)...}
+
+Constraints:
+C(S)+SF(S)+SF(S)+PG(S) <= 56500
+
+
+
+
+
+prob = LpProblem('Lines', LpMaximize)
+
+
+
+
